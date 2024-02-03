@@ -1,0 +1,278 @@
+---
+title: "Exersice 3 Statistical Learning (Improved)"
+author: "Aleksi Patronen"
+date: "2023-01-25"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+```
+
+## Assignment 1: Analysis of mortality rates using splines
+
+-   Gompertz (1825) theory that mortality rates (probability of dying per unit time) of many organisms increase at an exponential rate was examined in an experiment involving fruit flies. A total of 1,203,646 fruit flies comprised the population for this experiment and the number of flies found dead each day was recorded. The data set **mortality_rate.csv** contains the mortality rate (*Rate*) of the flies for each day (*Day*).
+
+-   **1.a.** Compute the *Log-Mortality-Rate* (*LMR*) as the natural logarithm of *Rate*. Make a scatter plot of LMR versus Day. Given the log-transformation, does it seem as if the data would follow an exponential mortality rate?
+
+```{r}
+setwd("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 3")
+
+mortality_rate <- read.csv("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 3/mortality_rate.csv", sep=";")
+attach(mortality_rate)
+
+log_mort_rate <- log(mortality_rate[,2])
+
+plot(x = mortality_rate[,1],
+     y = log_mort_rate,
+     main = "Day vs. Log-Mortality Rate",
+     xlab = "day",
+     ylab = "Log of Mortality Rate"
+     )
+
+
+```
+
+It would be almost certain that mortality rate doesn't grow at exponential rate. At first it seems like it, and for smaller following period approximation that it does could be usable.
+
+-   **1.b.** Fit natural cubic splines using the ns() function in package splines() (LMR as response variable and Day as predictor variable). Fit four models with 1, 2, 15 and 50 knots. Produce four plots with data points, predicted lines and their knots. Use all the data points to calculate the mean squared error (MSE). Which number of knots seems to give the most reasonable fit based on MSE?
+
+```{r}
+library(splines)
+
+for (i in c(2,3,16,51))
+{
+  
+knots <- ns(x = mortality_rate$Day, df = i)
+model <- lm(log_mort_rate ~ knots, data = mortality_rate)
+
+print(paste("MSE =", sum(model$residuals^2)/length(model$residuals)))
+bounds <- as.numeric(sort(c(attr(knots, "Boundary.knots"), attr(knots, "knots"))))
+
+plot(x= mortality_rate$Day,
+     y=predict(model),
+     type = "l",
+     ylim = c(-5,0),
+     main = paste("Natural Cubic Spline with ",i," knots"),
+     xlab = "Day",
+     ylab = "Log-Mortality Rate")
+points(x = mortality_rate$Day, y = log_mort_rate)
+abline(v = bounds, col = "red")
+}
+ 
+```
+
+Most reasonable fit would be with 15 knots, with 1 and 2 knots model is too simple and with 50 model becomes too sensitive to residuals. Smallest MSE was with 50 knot at 0.052 and with 15 it was 0.0802. Even though with 50 knots MSE is smaller, 15 knots is still more recommendable.
+
+-   **1.c.** The next task is to divide the data into 70% training and 30% test partitions. Use the sample.int() function to partition the original data into 95 train and 41 test data samples. Fit the models to the train data and perform the predictions on the test data. Calculate MSE based on the difference between the real test data and the predicted test data. Repeat 10 times (i.e. create 10 different training and test data) and calculate the mean MSE. Compare the results with these obtained in **1.b**.
+
+```{r}
+
+MSE <- c()
+round <- c()
+knots <- c()
+
+for (i in 1:10){
+set.seed(21 + i)
+  
+sample <- sample.int(n = nrow(mortality_rate), replace = FALSE, size = 95)
+train <- mortality_rate[sample,]
+test <- mortality_rate[-sample,]
+
+for (j in c(1,2,15,50)){
+  
+
+model <- lm(log(Rate, base = 10) ~ ns(Day, df = j), data = train)
+pre <- predict(model, newdata = test)
+mse <- mean((pre - log(test$Rate, base = 10))^2)
+
+MSE <- c(MSE, mse)
+round <- c(round, i)
+knots <- c(knots, j)
+}
+}
+
+results <- data.frame(round, knots, MSE)
+head(results)
+results[which.min(results$MSE),]
+
+print(paste("Average MSE:", mean(results$MSE)))
+
+```
+
+Surprisingly enough, best mse is achieved with 50 knots at 9th round, MSE = 0.000246.
+
+-   **1.d.** The final task of this assignment is to fit smoothing splines using the smooth.spline() function in R. Use generalized cross-validation to find the optimal degree of smoothing on each of the training data. Provide a plot of the data points and fitted spline curve for the first training data. Also, present the average of the estimated effective degrees of freedom and the smoothing parameter lambda, as well as the number of proper knots. Compare the average predicted MSE with the best MSE from **1.c**.
+
+```{r}
+
+
+model <- smooth.spline(x = mortality_rate$Day,
+                       y = log(mortality_rate$Rate, base = 10),
+                       cv = FALSE)
+model
+
+plot(model, type="l", main = "Log mortality rate")
+points(x = mortality_rate$Day, y = log10(mortality_rate$Rate), col = "blue")
+
+
+error <- mean(resid(model)^2)
+print(paste("MSE: ", error))
+```
+
+With GCV MSE was 0.0152, and mean MSE of the 1.c was 0.00545.
+
+# Assignment 2: Comparison of GAMs with spline and loess basis functions
+
+The text file auto-mpg.txt concerns city-cycle fuel consumption in miles per gallon, to be predicted in terms of 3 multivalued discrete and 5 continuous attributes:
+
+    1. mpg:           continuous
+    2. cylinders:     multi-valued discrete
+    3. displacement:  continuous
+    4. horsepower:    continuous
+    5. weight:        continuous
+    6. acceleration:  continuous
+    7. model year:    multi-valued discrete
+    8. origin:        multi-valued discrete
+    9. car name:      string (unique for each instance)
+
+The file contains data from 393 samples (missing values have been removed). Your task is to compare the prediction properties of fuel consumption using OLS, GAM with spline basis functions and GAM with local regression (loess) basis functions. mpg should be set up as the response variable and car name should be deleted. In addition, cylinders can be treated as an integer variable whereas model year and origin should be factors.
+
+```{r}
+auto.mpg <- read.table("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 3/auto-mpg.txt", header=TRUE, quote="\"", stringsAsFactors=TRUE)
+auto.mpg <- subset(auto.mpg, select = -c(name))
+auto.mpg$origin <- as.factor(auto.mpg$origin)
+auto.mpg$year <- as.factor(auto.mpg$year)
+
+```
+
+-   **2.a.** Set up a lasso model (option 'glmnet') for all data with the train() function in the caret and use LOOCV to find the RMSE. In order to tune the alpha and lambda parameters, ´ set the tuneLength = 50. Present the best model (not all) and its model fit criteria.
+
+```{r, warning=FALSE}
+
+set.seed(31)
+attach(auto.mpg)
+library(caret)
+
+model <- caret::train( mpg ~ cylinders + displacement + horsepower + weight +  acceleration + year + origin,
+                      method = "glmnet",
+                      tuneLenght = 50,
+                      data = auto.mpg,
+                       trControl = trainControl(
+                                  method = "LOOCV", 
+                                  number = 10,
+                        )
+                      )
+
+
+model$results[which.min(model$results$RMSE),]
+```
+
+Best performing model was when:
+
++---+---------+------------+----------+-----------+----------+
+|   | alpha   | lambda     | RMSE     | Rsquared  | MAE      |
+|   |         |            |          |           |          |
+|   | \<dbl\> | \<dbl\>    | \<dbl\>  | \<dbl\>   | \<dbl\>  |
++===+========:+===========:+=========:+==========:+=========:+
+| 1 | 0.10    | 0.01297476 | 3.143226 | 0.8374618 | 2.400647 |
++---+---------+------------+----------+-----------+----------+
+
+RMSE was 3.143226
+
+**2.b.** Set up a GAM model with spline basis functions for all data with the train() function in the caret package and use LOOCV to find the best RMSE. Find a reasonable interval for the tuning parameter df. Present the table of the evaluated models and their model fit criteria
+
+```{r}
+
+
+time <- Sys.time()
+model_s <- caret::train( mpg ~ cylinders + displacement + horsepower + weight +  
+                         acceleration + year + origin,
+                      method = "gamSpline",
+                      df = c(1,2,3,4,5),
+                      data = auto.mpg,
+                      trControl = trainControl(
+                                  method = "LOOCV", 
+                                  number = 10)
+                      )
+print(model_s)
+
+
+print(Sys.time() - time)
+```
+
+With df = 3, smallest RMSE was found.
+
+**2.c.** Set up a GAM model with loess basis functions for all data with the train() function in the caret package and use LOOCV to find the RMSE. Find a reasonable interval for the tuning parameter span and fix degree to 1. Present the table of the evaluated models and their model fit criteria
+
+```{r GAM MODEL, warning=FALSE}
+
+set.seed(22)
+
+grid <- expand.grid(span = seq(0.1, 1, len = 5), degree = 1)
+
+model <- caret::train( mpg ~ cylinders + displacement + horsepower + weight +  
+                         acceleration,
+                      method = "gamLoess",
+                      data = auto.mpg,
+                      trControl = trainControl(method = "LOOCV", number = 5),
+                      tuneGrid = grid
+                      )
+
+ggplot(model, highlight = TRUE)
+model$results[which.min(model$results$RMSE),]
+
+
+```
+
+    Deviance Residuals:
+         Min       1Q   Median       3Q      Max 
+    -10.5495  -2.0535  -0.2954   1.7992  16.3595 
+
+    (Dispersion Parameter for gaussian family taken to be 14.428)
+
+        Null Deviance: 23818.99 on 391 degrees of freedom
+    Residual Deviance: 5429.059 on 376.2873 degrees of freedom
+    AIC: 2176.151 
+
+    Number of Local Scoring Iterations: NA 
+
+    Anova for Parametric Effects
+                                                  Df  Sum Sq Mean Sq F value    Pr(>F)    
+    cylinders                                   1.00 13880.3 13880.3 962.044 < 2.2e-16 ***
+    lo(displacement, span = 0.55, degree = 1)   1.00  1748.0  1748.0 121.154 < 2.2e-16 ***
+    lo(horsepower, span = 0.55, degree = 1)     1.00   769.2   769.2  53.316 1.706e-12 ***
+    lo(acceleration, span = 0.55, degree = 1)   1.00   383.1   383.1  26.549 4.156e-07 ***
+    lo(weight, span = 0.55, degree = 1)         1.00   152.6   152.6  10.573  0.001251 ** 
+    Residuals                                 376.29  5429.1    14.4                      
+    ---
+    Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+    Anova for Nonparametric Effects
+                                              Npar Df  Npar F     Pr(F)    
+    (Intercept)                                                            
+    cylinders                                                              
+    lo(displacement, span = 0.55, degree = 1)     2.6  4.7944  0.004554 ** 
+    lo(horsepower, span = 0.55, degree = 1)       2.4 20.7905 1.321e-10 ***
+    lo(acceleration, span = 0.55, degree = 1)     2.6  1.7718  0.159988    
+    lo(weight, span = 0.55, degree = 1)           2.2  2.5001  0.079066 .  
+    ---
+    Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+\
+
+-   **2.d.** Present a plot of the regression coefficient/curves for the method that performed best
+
+    Gam w/ splines had smallest RMSE.
+
+```{r plots}
+
+coefficients <- coefficients(object = model_s$finalModel)
+
+plot(coefficients)
+```

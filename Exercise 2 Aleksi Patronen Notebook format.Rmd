@@ -1,0 +1,242 @@
+---
+title: "Exersice 2 Statistical Learning"
+author: "Aleksi Patronen"
+date: "2023-01-25"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ISLR)
+library(leaps)
+library(caret)
+library(pls)
+library(dplyr)
+library(readr)
+library(glmnet)
+```
+
+Aleksi Patronen Ecercise 2
+
+*Assignment 1: Subset selection The data set Hitters, which can be obtained from the ISLR library, contains data with 322 observations of major league baseball players on 20 variables that are assumed to influence the salary of the players. The purpose of this assignment is to compare the results of Best Subset Selection, Forward Stepwise Selection and Backward Stepwise Selection. Use the leaps library and set up models with all variables as predictors and Salary as response.Find and present the best models based on both BIC and Cp. Which method performs best based on the lowest BIC and Cp, and which variables are important for the salary for this model?*
+
+```{r}
+# #install.packages("leaps")
+# library(ISLR)
+# library(leaps)
+# library(caret)
+# library(pls)
+# library(dplyr)
+
+set.seed(2)
+#install.packages("lattice")
+summary(Hitters)
+#code found on lecture slides
+
+#Forward stepwise selection
+bestsub <- regsubsets(Salary~., data = Hitters, nvmax = 19, method = "forward")
+bestsubsum <- summary(bestsub)
+
+# first bic
+which.min(bestsubsum$bic)
+coef(bestsub, which.min(bestsubsum$bic))
+
+#Then cp
+which.min(bestsubsum$cp)
+coef(bestsub, which.min(bestsubsum$cp))
+
+#Backwards stepwise selection
+bestsub <- regsubsets(Salary~., data = Hitters, nvmax = 19, method = "backward")
+bestsubsum <- summary(bestsub)
+
+# first bic
+which.min(bestsubsum$bic)
+coef(bestsub, which.min(bestsubsum$bic))
+
+#Then cp
+which.min(bestsubsum$cp)
+coef(bestsub, which.min(bestsubsum$cp))
+```
+
+Smallest BIC with forward step wise selection was 6. Coefficents that mattered to salary were AtBat, Hits, Walks, CRBI and Divisions. Smallest CP was 10 and coeff. were Atbats, hits, walks, CatBat, Cruns, assists.
+
+When bakwards was used, smallest BIC was 8 and coeff. AtBat , Hits , Walks , CRuns , CRBI, CWalks, DivisionW and PutOuts. CP was 10 again and coefficents that mattered
+
+    #Forwards step wise selection
+    #BIC
+     (Intercept)        AtBat         Hits        Walks         CRBI    DivisionW      PutOuts 
+      91.5117981   -1.8685892    7.6043976    3.6976468    0.6430169 -122.9515338    0.2643076 
+    #CP
+     (Intercept)        AtBat         Hits        Walks       CAtBat        CRuns         CRBI       CWalks    DivisionW      PutOuts 
+     162.5354420   -2.1686501    6.9180175    5.7732246   -0.1300798    1.4082490    0.7743122   -0.8308264 -112.3800575    0.2973726 
+         Assists 
+       0.2831680 
+
+    #bakwards step wise selection
+    #BIC
+     (Intercept)        AtBat         Hits        Walks         CRBI    DivisionW      PutOuts 
+      91.5117981   -1.8685892    7.6043976    3.6976468    0.6430169 -122.9515338    0.2643076 
+    #CP
+    (Intercept)        AtBat         Hits        Walks       CAtBat        CRuns         CRBI       CWalks    DivisionW      PutOuts 
+     162.5354420   -2.1686501    6.9180175    5.7732246   -0.1300798    1.4082490    0.7743122   -0.8308264 -112.3800575    0.2973726 
+         Assists 
+       0.2831680 
+      
+
+## Assignment 2: Comparison
+
+*of reduced dimension regression with regularized regression*
+
+*The text file "tecator.csv" contains the results of study aimed to investigate whether a near infrared absorbance spectrum can be used to predict the fat content of samples of meat. For each meat sample the data consists of a 100-channel spectrum of absorbance records and the levels of moisture (water), fat and protein. The absorbance is -log10 of the transmittance measured by the spectrometer. The moisture, fat and protein measurements are determined by analytic chemistry.*
+
+*The file contains data from 215 samples of finely chopped meat. Your task is to compare PCR, PLS, Lasso and Ridge regression in which the fat content is regarded as target and the absorbance levels recorded in the 100 channels are regarded as explanatory variables.*
+
+***Perform PCR and PLS regression***
+
+*Import the data in 'tecator.csv' to R. Inspect the infrared absorbance spectrum data (all columns except "sample", "fat","protein" and "moisture") to be analysed by making a parallel coordinate plot (lineplot) using the matplot() function (the index of the x-axis should correspond to the samples). What is your conclusion from the plot? Use "Fat" as response and remove "sample", "protein" and "moisture". Perform PCR and PLS using the caret() library together with pls(). Use 25-fold CV to determine the best number of components for both methods. Set the start number of components to 50. Provide plots for both methods of RMSE against components and calculate the MSE.*
+
+```{r}
+
+setwd("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 2")
+tecator <- read_csv("tecator.csv")
+matplot( x=tecator$Sample,
+         y = tecator[,2:101],
+         type = "l",
+         xlab = "sample number",
+         ylab = "Absorbance",
+         )
+# it seems that pieces of meat absorbed quite similar on each spectrum
+# lines follow each other quite closely
+
+set.seed(2)
+#it seemed that pcr is the function to use
+tecator_subset <- dplyr::select(tecator, -c("Sample","Protein", "Moisture"))
+#Partial Least Squares Model
+pls_model <- train(
+  Fat ~ ., 
+  data = tecator_subset,
+  method = "pls",
+  trControl = trainControl(
+    method = "cv", 
+    number = 25,
+  ),
+  tuneLength = 50
+)
+#pls_model
+
+row_min <- which.min(pls_model$results$RMSE)
+pls_model$results[row_min,]
+
+plot(x= pls_model$results$ncomp ,
+     y = pls_model$results$RMSE,
+     type = "l",
+     col = "red",
+     main = "Fat with PLS-model",
+     xlab = "Number of Components",
+     ylab = "RMSE")
+
+
+min <- which.min(pls_model$results$RMSE)
+#smallest RMSE was found with 19 components, and RMSE of 2.190226 and R^2 of ~98%
+pls_model$results[min,]
+(pls_model$results$RMSE[min])^2
+2.160225^2
+
+#Principal Component Regression
+pcr_model <- train(
+  Fat ~ ., 
+  data = tecator_subset,
+  method = "pcr",
+  trControl = trainControl(
+    method = "cv", 
+    number = 25,
+  ),
+  tuneLength = 50
+)
+#pcr_model
+results_pcr <- pcr_model$results
+#Plot
+plot(x= results_pcr$ncomp ,
+     y = results_pcr$RMSE,
+     type = "l",
+     col = "red",
+     main = "Fat with PCR-model",
+     xlab = "Number of Components",
+     ylab = "RMSE")
+
+# with 37 components, RMSE was 2.138069 and R^2 97.673..% 
+row_min <- which.min(results_pcr$RMSE)
+results_pcr[row_min,]
+#2.187674^2
+results_pcr[min,"RMSE"]^2
+#MSE of 5.431348
+```
+
+PLS component number vs. RMSE
+
+With Partial Least Squares minimum RMSE was at 18 components and with MSE of 4.67 and R\^2 = 98%.
+
+PCR method: RMSE vs. Number of components
+
+Likewise in PLS Minimum Root Mean Error was found when there were 19 components with RMSE of just 2.188. That is MSE of 4.785918
+
+Both PLS and PCR
+
+**Perform Lasso and Ridge regression**
+
+*Use the same data as in the previous section to perform Lasso and Ridge regression where the regularization parameter should be tuned with 25-fold CV. Provide plots that show the CV-error as a function of the log of the regularization parameter for both methods. Find the regression coefficients and produce one plot per method. Extract the MSE for the best models and compare with the results from PCR and PLS. Which method performs best?*
+
+```{r}
+
+
+set.seed(2)
+lambdas <- seq(0.01,10, by=0.01)
+
+
+x <- as.matrix(tecator_subset[,1:100])
+y <- as.matrix(tecator_subset[,101])
+
+lasso_model <- cv.glmnet(x = x,
+                         y = y,
+                         lambda = lambdas,
+                         alpha = 1,
+                         nfolds = 25,
+                         type.measure = "mse"
+                         )
+
+plot(lasso_model)
+lasso_model$lambda.min
+min <- which.min(lasso_model$cvm)
+lasso_model$cvm[min]^2#mse = 109.5816
+#it seems that LASSO doesnt work at alla in this situation
+#or it has not been implemented correctly
+
+
+#Ridge modeling
+ridge_model <- cv.glmnet(x = x,
+                         y = y,
+                         lambda = lambdas,
+                         alpha = 0,
+                         nfolds = 25,
+                         type.measure = "mse"
+                         )
+
+plot(ridge_model)
+ridge_model$lambda.min
+min <- which.min(ridge_model$cvm)
+ridge_model$lambda[min]
+
+min(ridge_model$cvm)
+min(ridge_model$cvm)^2 #MSE 97.88002
+#Also Ridge was a bust compared to the PLS and PCR
+
+
+
+```
+
+With LASSO and Ridge MSE were high as 108 and 97. Which would indicate that either that code implementation didn't succeed or that the methods were inferior to PLS and PCR. My guess is on former.

@@ -1,0 +1,149 @@
+---
+title: "Statistical Learning Exercise 7 Aleksi Patronen"
+author: "Aleksi Patronen"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(readr)
+library(graphics)
+library(kernlab)
+library(mclust)
+library(caret)
+```
+
+```{r setwd, message=FALSE}
+setwd("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 7")
+```
+
+# Assignment 1: Dimension reduction.
+
+-   The text file 'fluorescence.csv' contains data regarding light reflection from a total of 30 surfaces treated with zinc, rhodamine, manganese etc. For each surface, measurements are undertaken for light representing 146 different wavelengths (channels), i.e., the data have 146 dimensions. However, the measured values for adjacent channels are strongly correlated, implying that the effective dimension of the measured values is much smaller than 146.
+
+    ```{r data setup}
+    fluorescence <- read.csv("fluorescence.csv", stringsAsFactors = TRUE)
+    head(fluorescence, 3)
+
+
+    ```
+
+-   Your task is to perform principal components analysis of the given data and to interpret the results of that analysis. For the sake of simplicity, the channels for which there was no variation in the light reflection have been omitted. Import and plot the data set Import the data into R. Inspect the light reflection data (all columns except the first "sample") to be analysed by making a parallel coordinate plot (lineplot) in R of the data using the matplot() function. The samples should be on the x-axis.
+
+    ```{r pca}
+
+
+    matplot(x = fluorescence$Sample,
+            y = fluorescence[,-1] ,
+            type = "l",
+            main = "Pararell Lineplot",
+            xlab = "Sample",
+            ylab = "Channels"
+            )
+
+    ```
+
+    matplot insist on drawing columns.
+
+-   Extract principal components Perform PCA using the prcomp() function (centered but not scaled). Examine the effective dimension of the given data, i.e., how many principal components that are needed to explain most of the variation in the data based on a screeplot and sources of variation.
+
+    ```{r pca components}
+
+    flu.pca <- prcomp(fluorescence[,-1],
+                      center = TRUE,
+                      scale = FALSE)
+
+    summary(flu.pca)
+
+
+
+    ```
+
+    With four first components 91.277% of variations is explained
+
+-   **Draw a biplot**. Create a biplot where the Sample factor should be used for grouping. Can you identify distinct groups of objects in this new coordinate system? Are any channels particularly important in the separation?
+
+    ```{r plotting pca}
+
+    biplot(flu.pca)
+
+    ```
+
+    Biplot is super crowded, but one can still distinguish three separate groups.
+
+-   Perform kernel PCA using the kpca() function with the RBF kernel by tuning sigma. Plot the two first principal components and label the samples with different colors. Are there any differences compared to the linear PCA result?
+
+    ```{r kernel pca}
+
+
+    kpca <- kpca(x = as.matrix(fluorescence[,-1]),
+         kernel = "rbfdot",
+          kpar = list(sigma = c(0.1,6, by = 0.1))
+         )
+
+
+    plot(pcv(kpca),
+          xlim = c(-2,7),
+          ylim = c(-7,2),
+          col = as.integer(fluorescence$Sample)
+         )
+    plot(pcv(kpca),
+          ylim = c(0,0.4),
+          xlim = c(-0.17,-0.15),
+          col = as.integer(fluorescence$Sample)
+         )
+    ```
+
+    Kerrnel PCA results do compare to the regular PCA. Clusters are positioned similarly as in PCA.
+
+    Second plot is and zoom into the clusters.
+
+    # Assignment 2: Clustering
+
+-   The seeds data set <http://archive.ics.uci.edu/ml/machine-learning-databases/00236/seeds_dataset.txt> (also used in Lab 1_2) contains measurements of seven geometric parameters of wheat kernels from three different varieties. Your task is to investigate if K-means clustering with the Gap statistic and the model based mixture clustering using the mclust() library supports the classification into three distinct varieties. Provide evidence for the number of clusters and which measurements that cluster together, as well as how the clustering corresponds to the real classification. Note that the last variable contains the variety information and should not be included in the clustering, and make sure that you standardize the data.
+
+```{r Ass. 2 data import}
+seeds_dataset <- read.delim("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 7/seeds_dataset.txt", header=FALSE, comment.char="#")
+
+seeds_dataset$V8 <- factor(seeds_dataset$V8,
+                           labels = c("Kama",
+                                      "Rosa",
+                                      "Canadian"),
+                           levels = c(1,2,3)
+                           )
+
+seeds <- seeds_dataset[,1:7]
+
+seeds <- scale(seeds,
+               center = TRUE,
+               scale = TRUE)
+
+```
+
+```{r}
+#Without prior
+set.seed(5464)
+clust <- Mclust(seeds)
+plot(clust, what = "BIC")
+plot(clust, what = "classification")
+plot(clust, what = "uncertainty")
+plot(clust, what = "density")
+
+table(seeds_dataset$V8, clust$classification)
+
+#with prior knowledge of G = 3
+clust_2 <- Mclust(seeds, G = 3)
+table(seeds_dataset$V8, clust_2$classification)
+
+confusionMatrix(data = factor(clust_2$classification, levels = c(1,2,3), labels = c("Kama", "Rosa", "Canadian")),
+                reference = as.factor(seeds_dataset$V8) )
+
+```
+
+Interestingly K means clustering would preferably divide data into 4 categories, implying there's some internal division in some categories. Most likely in first and second one. First category ("Kama") and second ("Rosa"), split into two classes with some overlap.
+
+When prior knowledge about classes is used the k means clustering achieves accuracy of \~90%. That is good for unsupervised algorithm.

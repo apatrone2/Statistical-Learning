@@ -1,0 +1,200 @@
+---
+title: "Statistical Learning Exercise 5"
+author: "Aleksi Patronen"
+date: "2023-02-09"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, warning=FALSE, results='hide'}
+library(e1071)
+library(dplyr)
+library(caret)
+library(kernlab)
+```
+
+## Assignment 1: Create a spam filter using Support Vector Machines with different kernels
+
+-   The data file spambase.csv contains information about the frequency of various words, characters etc for a total of 4601 e-mails. Furthermore, these e-mails have been classified as spams (spam = 1) or regular e-mails (spam = 0). Make sure to transform this variable to a factor. Your task is to develop a function based on the SVM model that can be used as a spam filter.
+
+```{r ass. 1 data, results='hide'}
+rm(list = ls())
+
+setwd("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 5")
+spambase <- read.csv("spambase.csv", stringsAsFactors = )
+
+spambase <- mutate(.data = spambase,
+                   Spam = factor(levels = c(0,1),
+                                 labels = c("Ham", "Spam"),
+                                 spambase$Spam))
+
+head(spambase)
+
+```
+
+-   1.a. Use the tune() function with the svm option in the e1071() library to tune the cost parameter over a reasonable number of values for the linear kernel. Use all data as training data. Tune your procedure by calculating the accuracy and present evidence that you have obtained the best tuning.
+
+```{r 1A, warning=FALSE}
+
+svm_linear <- tune(svm, 
+                   data = spambase,
+                   Spam ~ .,
+                   kernel = "linear",
+                   ranges = list(cost = c(0.01, 0.1, 1, 10, 100)),
+                   scale = TRUE)
+confusionMatrix(svm_linear$best.model$fitted, spambase$Spam)
+
+
+```
+
+Model had an accuracy of \~94%
+
+-   1.b. Repeat the analysis in 1.a. with the radial basis function kernel, calculate new accuracies and provide evidence for the best model.
+
+```{r 1B, warning=FALSE}
+
+
+svm_radial <- tune(svm, 
+                   data = spambase,
+                   Spam ~ .,
+                   kernel = "radial",
+                   ranges = list(cost = c(0.01, 0.1, 1, 10, 100)),
+                   scale = TRUE)
+#summary(svm_radial)
+confusionMatrix(svm_radial$best.model$fitted, spambase$Spam)
+
+
+```
+
+This one had better accuracy of 96.6%. Which is great, but not excellent.
+
+-   1.c. Based on the results from 1.a. and 1.b. present a function of the best method that reads new test observations and outputs the prediction if the mail was a spam or not.
+
+```{r 1C}
+model <- svm_radial$best.model
+
+prediction <- predict(model, newdata = spambase, )
+
+confusionMatrix(spambase$Spam,prediction)
+
+
+
+
+```
+
+SVM had quite good accuracy, but because whole data set was used to create a model, its hard to judge whether model is any good.
+
+## Assignment 2: Investigate the prediction properties of the Support Vector Regression method with different kernels
+
+-   In Lab 3_2, you investigated how the Lasso and different GAM models performed on the auto-mpg.txt data which concerns city-cycle fuel consumption in miles per gallon, to be predicted in terms of 3 multivalued discrete and 5 continuous attributes. Follow the instructions there regarding the data. Your task is to compare the results from the GAM models with the prediction properties of Support Vector Regression (SVR) with different kernels using the kernlab and caret packages
+
+```{r Ass 2}
+rm(list = ls())
+auto.mpg <- read.table("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 3/auto-mpg.txt", header=TRUE, quote="\"", stringsAsFactors=TRUE)
+auto.mpg <- subset(auto.mpg, select = -c(name))
+auto.mpg$origin <- as.factor(auto.mpg$origin)
+auto.mpg$year <- as.factor(auto.mpg$year)
+
+
+
+```
+
+-   2.a. Set up a SVR model with the linear kernel function for all data with the train() function in the caret package and use LOOCV to find the best RMSE. Find a reasonable interval for the tuning parameter C. Present the table of the evaluated models and their model fit criteria.
+
+```{r 2A}
+
+train = trainControl(method = "LOOCV")
+time <- Sys.time()
+model <- train(mpg ~.,
+               data = auto.mpg,
+               trControl = train,
+               method = "svmLinear",
+               tuneGrid = expand.grid(C = seq(0.001, 2, length = 20))
+               )
+print(Sys.time() -time)
+
+```
+
+```{r}
+model
+```
+
+Best RMSE was when C = 2, of RMSE = 3.909469
+
+-   2.b. Set up a SVR model with the radial basis kernel function for all data with the train() function in the caret package and use LOOCV to find the RMSE. Find a reasonable interval for the tuning parameter C. Present the table of the evaluated models and their model fit criteria.
+
+```{r 2B}
+
+
+train = trainControl(method = "LOOCV")
+time <- Sys.time()
+model <- train(mpg ~.,
+               data = auto.mpg,
+               trControl = train,
+               method = "svmRadial",
+               tuneGrid = expand.grid(sigma = 1,
+                                      C = seq(00.1,2, length = 20))
+               )
+print(Sys.time() -time)
+
+```
+
+```{r results for model}
+model
+
+model$results[which.min(model$results$RMSE),]
+```
+
+-   2.c. Set up a SVR model with the radial basis kernel function for all data with the train() function in the caret package and use LOOCV to find the RMSE. Find a reasonable interval for the tuning parameter C and sigma. Present the table of the evaluated models and their model fit criteria.
+
+```{r 2C, eval=FALSE}
+train = trainControl(method = "LOOCV")
+time <- Sys.time()
+model <- train(mpg ~.,
+               data = auto.mpg,
+               trControl = train,
+               method = "svmRadial",
+               tuneGrid = expand.grid(sigma = seq(0.001,
+                                                  2,
+                                                  length = 10),
+                                      C = seq(0.01,
+                                              2,
+                                              length = 20))
+               )
+print(Sys.time() -time)
+```
+
+```{r model results, results='hide', eval=FALSE}
+model
+model$results[which.min(model$results$RMSE),]
+
+```
+
+-   2.d. How did the SVR models perform in comparison with the LASSO and GAM models? Provide a discussion that not only takes MSE into account but also computing time.
+
++----+---------+---------+----------+-----------+----------+
+|    | sigma   | C       | RMSE     | Rsquared  | MAE      |
+|    |         |         |          |           |          |
+|    | \<dbl\> | \<dbl\> | \<dbl\>  | \<dbl\>   | \<dbl\>  |
++:===+========:+========:+=========:+==========:+=========:+
+| 20 | 1       | 2       | 3.909469 | 0.7589035 | 2.792603 |
++----+---------+---------+----------+-----------+----------+
+
+With sigma fixed to 1
+
++----+-----------+---------+----------+-----------+----------+
+|    | sigma     | C       | RMSE     | Rsquared  | MAE      |
+|    |           |         |          |           |          |
+|    | \<dbl\>   | \<dbl\> | \<dbl\>  | \<dbl\>   | \<dbl\>  |
++:===+==========:+========:+=========:+==========:+=========:+
+| 40 | 0.2231111 | 2       | 3.184653 | 0.8355044 | 2.202877 |
++----+-----------+---------+----------+-----------+----------+
+
+Sigma and C running.
+
+With radial, sigma fixed to 1 and C to be optimized, RMSE was 3.9. Compared to LASSO and GAM; LASSO had RMSE of 3.14 and GAM had 2.7. Meaning with sigma fixed SVR was worse. Not mentioning that it took 2.4 minutes to run, compared to LASSOS \~40s.
+
+When iterating through sigma as well better fit was found. RMSE of 3.18. It's closer to LASSO, but it took 23 minutes to run. Because C came out the same in the sigma version, I should have just let sigma run and fix C to it's previously discovered good value of 2.

@@ -1,0 +1,222 @@
+---
+title: "Exersice 6 Statistical Learning Aleksi Patronen"
+author: "Aleksi Patronen"
+date: "2023-02-15"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, warning = FALSE, message=FALSE}
+library(readr)
+library(tensorflow)
+library(caret)
+library(reticulate)
+library(keras)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+```
+
+# Assignment 1: Investigate the prediction properties of Project Pursuit Regression, Multi Layer Perceptron, Convolutional Neural Network and Recurrent Neural Network.
+
+-   In Lab 2_2 and 4_2, you investigated how PCR, PLS, Lasso, Ridge regression and Random Forest performed on the "tecator.csv" data which contains the results of a study aimed to investigate whether a near infrared absorbance spectrum can be used to predict the fat content of samples of meat. This data consists of highly correlated predictor sequences with an associated quantitative measurement. Your task is to implement and compare the prediction properties of the PPR using the ppr function in caret and MLP, 1dCNN and a RNN (LSTM) in Keras.
+
+```{r tecator}
+
+rm(list = ls())
+setwd("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 6")
+tecator <- read_csv("tecator.csv")
+tecator <- subset(tecator, select = -c(Sample, Protein, Moisture))
+head(tecator, 3)
+
+
+```
+
+-   1.a. Set up a PPR model for all data with the train() function in the caret package and use LOOCV to find the best RMSE. Find a reasonable interval for the tuning parameter nterms. Present the table of the evaluated models and their model fit criteria.
+
+New Code
+
+```{r}
+
+library(caret)
+rctrl2 <- trainControl(method = "LOOCV")
+
+ppr <- caret::train(Fat~. ,
+             data = tecator,
+             method = "ppr",
+             trControl = rctrl2
+)
+
+ppr
+```
+
+So, the train(), ppr function started functioning. I don't know why it did it, but my guess is on some background process that I left running. Now best nterms was found to be 3, with RMSE of just 1.59.
+
+-   1.b. Set up Keras models for the MLP, 1dCNN and a RNN (LSTM) following the web guide (note that you should install Keras following the Moodle instructions): <https://letyourmoneygrow.com/2018/05/27/classifying-time-series-with-keras-in-r-a-step-by-step-example/> Tune the models with the validation error and calculate test MSE for the full data following the lecture notes. Make sure that the validation error drops and converges to values around a minimum, but you need to take your own decision on what parameters to tune (hint: use the ADAM optimizer). Note that the LSTM model can be difficult to tune. Present the table of the evaluated models and their model fit criteria.
+
+I am going to split the data at random rather than the time series analysis way, that was used in the example above.
+
+```{r 1b data reshaping, warning=FALSE}
+
+set.seed(165)
+splt <- floor(0.8*nrow(tecator))
+sample <- sample(nrow(tecator), size = splt, replace = FALSE)
+train <- tecator[sample,]
+test <- tecator[-sample,]
+
+y_train <- scale(train[,101])
+x_train <- scale(train[,-101], scale = TRUE)
+
+y_test <- scale(test[,101])
+x_test <- scale(test[,-101], scale = TRUE)
+
+
+class(y_train)
+
+#training data
+y_train_cnn <- array_reshape(y_train, c(dim(y_train), 1))
+x_train_cnn <- array_reshape(x_train, c(dim(x_train), 1))
+#test data
+y_test_cnn <- array_reshape(y_test, c(dim(y_test), 1))
+x_test_cnn <- array_reshape(x_test, c(dim(x_test), 1))
+
+
+```
+
+```{r 1b model VANILLA MLP w/ 2 layers, results= 'hide'}
+
+
+mean_squared_error <- function(y_true, y_pred){
+  
+    mean((y_pred - y_true)^2)
+}
+
+set.seed(991)
+model <- keras_model_sequential(input_shape = dim(x_train_cnn)[-1] ) %>% 
+  layer_dense(units = 80, activation = "relu") %>%
+  layer_dropout(0.4) %>%
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dropout(0.2) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+
+summary(model)
+
+opt = keras::optimizer_adam(learning_rate = 0.03)
+
+model %>% compile(
+  loss = mean_squared_error,
+  optimizer = opt,
+  metrics = 'mse' )
+
+history <- model %>% fit(
+  x_train_cnn,
+  y_train_cnn,
+  epochs = 60,
+  batch_size = 5, 
+  validation_split = 0.2,
+  verbose = 0,
+)
+
+model %>% evaluate(x = x_test_cnn, y = y_test_cnn, verbose = 1) 
+
+
+
+plot(history)
+
+
+```
+
+```{r 1b 1dCNN , results='hide'}
+
+
+
+
+set.seed(994)
+model <- keras_model_sequential(input_shape = dim(x_train_cnn)[-1] ) %>% 
+  layer_conv_1d(filters = 5,
+                kernel_size = 7,
+                activation = "relu",
+                input_shape = dim(x_train_cnn)[-1]) %>%
+  layer_max_pooling_1d(pool_size = 2) %>%
+  layer_flatten() %>%
+  layer_dense(units = 10, activation =  "relu") %>%
+  layer_dense(units =  1, activation = "sigmoid")
+
+
+summary(model)
+
+
+opt = keras::optimizer_adam(learning_rate = 0.03)
+model %>% compile(
+  loss = mean_squared_error,
+  optimizer = opt,
+  metrics = 'mse' )
+
+history <- model %>% fit(
+  x_train_cnn,
+  y_train_cnn,
+  epochs = 60,
+  batch_size = 15, 
+  validation_split = 0.2,
+  verbose = 0
+)
+
+model %>% evaluate(x_test_cnn, y_test_cnn, verbose = 1) 
+
+plot(history)
+
+
+```
+
+CNN achieved MSE of approximate 0.95
+
+```{r 1b LSTM model,results= 'hide'}
+
+set.seed(991)
+model <- keras_model_sequential() 
+model %>% 
+  layer_lstm(units = 24,
+             input_shape=c(dim(x_train_cnn)[-1])) %>% 
+  layer_dense(units = 2, 
+              activation = 'sigmoid')
+ 
+summary(model)
+
+opt = keras::optimizer_adam(learning_rate = 0.005)
+
+model %>% compile(
+  loss = mean_squared_error,
+  optimizer = opt,
+  metrics = c('mse')
+)
+
+history <- model %>% fit(
+  x_train_cnn,
+  y_train_cnn, 
+  epochs = 60, 
+  batch_size = 45, 
+  validation_split = 0.2,
+  verbose =  0
+)
+
+
+plot(history)
+model %>% evaluate(x_test_cnn, y_test_cnn)
+
+```
+
+-   1.c. How did the models perform in comparison with the earlier tried models?
+
+Vanilla neural network achieved good results, but learning flat lined around \~1.00 MSE and is steadily increasing. Indicating, that means model is saturated and can't learn any thing new.
+
+CNN performed best with lowest MSE of around 0.95. With some distinguishable overfitting.
+
+LSTM model was also good, with MSE of around 1.00 .
+
+I adjusted both learning rate and batch size manually with each model.
+
+EDIT: R markdown reruns the chunks, when converting to PDF, shown results may differ from expressed ones.

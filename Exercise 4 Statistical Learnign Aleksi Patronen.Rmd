@@ -1,0 +1,193 @@
+---
+title: "Untitled"
+author: "Aleksi Patronen"
+date: "2023-02-02"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, message=FALSE, warning=FALSE}
+#libraries
+
+library(caret)
+library(rpart)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(ggcorrplot)
+library(randomForest)
+set.seed(21)
+```
+
+```{r}
+#install.packages("rpart")
+setwd("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 4")
+
+
+agaricus_lepiota=read.csv("agaricus-lepiota.csv",
+                          header = F,col.names=c("poiede",
+                                                 "cap_shape",
+                                                 "cap_surface",
+                                                 "cap_color",
+                                                 "bruises",
+                                                 "odor",
+                                                 "gill_attachment",
+                                                 "gill_spacing",
+                                                 "gill_size",
+                                                 "gill_color",
+                                                 "stalk_shape",
+                                                 "stalk_root",
+ "stalk_surface_above_ring","stalk_surface_below_ring",
+ "stalk_color_above_ring","stalk_color_below_ring","veil_type",
+ "veil_color","ring_number","ring_type","spore_print_color",
+ "population","habitat"),
+ stringsAsFactors = TRUE)
+
+str(agaricus_lepiota)
+
+
+
+clean_agaricus_lepiota= agaricus_lepiota %>% filter (agaricus_lepiota$stalk_root!='?') %>% droplevels()
+
+ind <- seq(1:23)
+for (i in ind)(
+clean_agaricus_lepiota[,i] <- as.numeric(clean_agaricus_lepiota[,i])
+)
+
+#pairs(clean_agaricus_lepiota[1:13])
+
+clean_agaricus_lepiota <- select(clean_agaricus_lepiota, -c("veil_type"))
+#veil type was removed due to it being non informative vector only containg value 1
+corr  = round(cor(clean_agaricus_lepiota), 1)
+ggcorrplot(corr,outline.color = "white",lab = T,lab_size =3)
+
+#furthermore odor, stalk shape, spore print color, bruises, stalk 
+#surface below and above ring were removed due to them having higher
+#correlation coefficent than arbituarylly chosen cut-off point of 0.3
+cleaned_data <- subset(agaricus_lepiota, 
+                       select = -c(bruises,
+                                   stalk_shape,
+                                   stalk_surface_above_ring,
+                                   stalk_surface_below_ring, 
+                                   spore_print_color,
+                                   veil_type ))
+
+str(cleaned_data)
+
+```
+
+## Assignment 1: Classification with CART and boosting trees
+
+-   The mushroom data set <http://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/agaricus-lepiota.data> includes descriptions of hypothetical samples corresponding to 22 variables measured on gilled mushrooms in the Agaricus and Lepiota Family (pp. 500-525).  Each species is identified as definitely edible, definitely poisonous, or of unknown edibility and not recommended.  This latter class was combined with the poisonous one.  Hence, the classes of the binary variable is poisonous (p) and edible (e), and located in the first column. The Guide clearly states that there is no simple rule for determining the edibility of a mushroom. Your task is to find out if this statement is true by comparing the prediction accuracies of CART and boosting trees. Note that you may need to edit this data by checking for high correlations, missing data (?) and non-varying variables.
+
+-   Use 25-fold CV for both methods and set up models in caret with the rpart and xgbTree options. Tune the cp parameter in rpart and the max_depth, eta and nrounds in xgbTree (you need to find suitable limits for these on your own). Present results from the accuracy evaluations as well as Variable importance plots for both methods. Which method works best and what is your conclusion regarding the statement above?
+
+```{r}
+
+rpart <- train(poiede~., data = cleaned_data,
+               method = "rpart",
+               trControl = trainControl("cv", number = 25),
+               tuneGrid = expand.grid(cp = seq(0.00001, 0.005, length  = 25))
+               )
+rpart
+plot(rpart)
+plot(rpart$finalModel)
+#text(rpart$finalModel)
+
+vimp <- rpart$finalModel$variable.importance
+plot(vimp, xlab = "Variable", xaxt = "n")
+axis(1, 1:length(vimp), cex.axis = 0.6)
+
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+set.seed(123)
+xgbGrid <- expand.grid(nrounds = c(1:10),
+                       max_depth = c(1, 5, 7, 10),
+                       eta = seq(0.1, 0.7, by = 0.1),
+                       gamma = 0,
+                       colsample_bytree = .7,
+                       min_child_weight = 1,
+                       subsample =  1
+                       )
+                       
+
+cctrl1 <- trainControl(method = "cv",
+                       number = 25,
+                       returnResamp = "all",
+                       classProbs = TRUE, 
+                       summaryFunction = twoClassSummary
+                       )
+
+xgb_rpart <- train(poiede~., data = cleaned_data,
+               method = "xgbTree",
+               trControl = cctrl1,
+               tuneGrid = xgbGrid,
+               metric = "ROC",
+               verbosity = 0
+               )
+
+xgb_rpart$finalModel$tuneValue
+
+
+vimp <- varImp(xgb_rpart, scale = FALSE)
+
+head(vimp$importance, 5)
+
+plot(x = vimp$importance$Overall, xlab = "Variable", xaxt = "n")
+axis(1, 1:length(vimp), cex.axis = 0.6)
+
+```
+
+Best model was found when nrounds was 3, max depth 10, eta of 0.7. Five most important variables can be seen above. Out of these five most significant were first three: gill size n, odor f, odor n. These three can seen on the importance plot as detached from rest of the variables.
+
+One observation to make was when eta is allowed to grow the ROC will improve. eta is the learning rate. Of course when learning rate is higher the model tends to over fit.
+
+# Assignment 2: Investigate the prediction properties of the Random Forest method on highly correlated data
+
+-   In Lab 2_2, you investigated how PCR, PLS, Lasso and Ridge regression performed on the "tecator.csv" data which contains the results of a study aimed to investigate whether a near infrared absorbance spectrum can be used to predict the fat content of samples of meat. It has been noticed that the Random Forest (RF) method can be sensitive to correlated data, and it has been suggested that the mtry parameter can be tuned to lower values to improve prediction properties. Your task is to check if this is true by implementing the RF with the combination of the randomForest and caret packages.
+
+-   Start by explaining in detail what the mtry parameter has for role in the RF method. Then, follow the instructions for loading and editing of the data set in Lab 2_2. Set up the train model in the caret packages with 25-fold CV. Evaluate models over mtry with a sequence of values from 1 to 25. You can leave the ntrees and nodesize parameters at their default values. Is there any evidence for the claim that lower mtry yields lower prediction accuracy? Which is the best model and how does the prediction MSE compare with the estimates from Lab 2_2 PCR, PLS, Lasso and Ridge regression? What is your conclusion regarding the RF and correlated data?
+
+mtry is number of variables to be collected at random sampling, i.e. when new split is coming, some of the predictor variables are put aside and from rest, a new "split"-variable is chosen. "mtry" is the integer of how many new candidates there will be.
+
+```{r}
+
+rm(list = ls())#empty global enviroment
+setwd("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 4")
+tecator <- read.csv("C:/Users/Aleksi/Desktop/KOulu/Statistical Learning/Exercises/Exercise 2/tecator.csv")
+
+tecator <- subset(tecator, select = -c(Sample, Protein, Moisture))
+
+#glimpse(tecator)
+```
+
+```{r}
+#Model making
+mtrys <- seq(1,25)
+set.seed(123)
+
+control <- trainControl(method='cv', 
+                        number=25
+                        )
+
+tunegrid <- expand.grid(.mtry=mtrys)
+
+rf_default <- train(Fat~., 
+                      data=tecator, 
+                      method='rf', 
+                      metric='RMSE', 
+                      tuneGrid=tunegrid, 
+                      trControl=control
+                    )
+rf_default
+```
+
+Because response variable (Fat) is continuous accuracy wasn't used. with mtry 24 smallest RMSE was found at 6.446, but it has $R^2$ of just 0.74. So, not so great.
+
+It really does seem that lower mtry numbers, RMSE is larger, that is lower accuracy of predictions. Both PLS and PCR had significantly lower RMSE and higher $R^2$. Both RMSE's hovered around 2.2, and RF had 6.4. It really seems that RF cant handle correlated data. Event thought this goes against my own intuition that when new predictor variable is chosen at random, it shouldn't be such a problem.
